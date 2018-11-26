@@ -7,8 +7,6 @@ import threading
 GPIO_PWM = 13
 GPIO_DIRECTION = 6
 GPIO_ENABLE = 5    # ENABLE (False: ENABLE / True: DISABLE)
-mode = 0
-duty = 0
 
 def setup():
     GPIO.setmode(GPIO.BCM)              #GPIO Numbering
@@ -23,25 +21,20 @@ class thread_socket(threading.Thread):
         self.__exit = False
 
     def run(self):
-            global mode, duty
             print("Socket process !\n")
-            port = 4010
+            port = 4021
             host = ''
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.bind((host, port))
             sock.listen(1)
             conn, addr = sock.accept()
             while(True):
-                mode = conn.recv(10)
-                duty = conn.recv(10)
-                if not mode or duty:
-                    conn.sendall(mode)
-                    conn.sendall(duty)
+                data = conn.recv(10)
+                if not data:
+                    conn.sendall(data)
                     break
-                print(mode.decode())
-                print(duty.decode())
-                mode = mode.decode()
-                duty = duty.decode()
+                data = data.decode()
+                print(data)
 
 class dcmotor_thread(threading.Thread):
     def __init__(self):
@@ -50,17 +43,17 @@ class dcmotor_thread(threading.Thread):
         self.__exit = False
 
     def run(self):
-        print("Input Mode (Start: 1, Suspend: 2, Resume: 3, Exit: 4) \n")
+
+        print("Input Duty: ")
         pwm.start(0)
+        GPIO.output(GPIO_DIRECTION, True)
+        GPIO.output(GPIO_ENABLE, False)
         while True:
-            if(duty == '0'):
-                GPIO.output(GPIO_ENABLE, True)
-            elif(duty != '0'):
-                GPIO.output(GPIO_ENABLE, False)
-                pwm.ChangeDutyCycle(int(duty))
-                print("Duty Cycle = %s%%" %duty)
-                # else:
-                    # print("Input direction, again")
+            if(isfloat(data)==True):
+                if(data == 0):
+                    pwm.ChangeDutyCycle(0)
+                elif(0<data<=100):
+                    pwm.ChangeDutyCycle(data)
 
     def Suspend(self):
         self.__suspend = True
@@ -69,27 +62,50 @@ class dcmotor_thread(threading.Thread):
     def Exit(self):
         self.__exit = True
 
+def str_to_float(s):
+    f = float(s)
+    return f
+
+def float_to_str(f):
+    s = str(f)
+    return s
+
+def isfloat(value):
+  try:
+    float(value)
+    return True
+  except ValueError:
+    return False
+
+def isstr(value):
+  try:
+    str(value)
+    return True
+  except ValueError:
+    return False
+
 def loop():
-    th_socket = thread_socket()
-    th_socket.start()
-    time.sleep(1)
+    global data
+    data = ""
+    socket = thread_socket()
+    socket.start()
     dc = dcmotor_thread()
     while True:
-        if(mode == 1):
-            dc.start()
-            time.sleep(1)
-        elif(mode == 2):
-            dc.Suspend()
-            time.sleep(1);
-        elif(mode == 3):
-            dc.Resume()
-            time.sleep(1)
-        elif(mode == 4):
-            dc.Exit()
-            time.sleep(1)
-            exit(0)
-        # else:
-            # print("Input Mode, again")
+        if(isstr(data)==True):
+        # print("Input Mode (Start: 1, Suspend: 2, Resume: 3, Exit: 4) \n")
+            if(data == 'start'):
+                data = str_to_float(data)
+                dc.start()
+                # float_to_str(data)
+            elif(data == 'suspend'):
+                dc.Suspend()
+            elif(data == 'resume'):
+                dc.Resume()
+            elif(data == 'exit'):
+                time.sleep(1)
+                dc.Exit()
+            else:
+                None
 
 def destroy():
     pwm.stop()
@@ -101,5 +117,5 @@ if __name__ == '__main__':   # Program start from here
         pwm = GPIO.PWM(13,50)
         try:
             loop()
-        except KeyboardInterrupt: # When 'Crtl + C' is pressed, the child program destroy() will be executedself.
+        except KeyboardInterrupt:
             destroy()
